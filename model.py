@@ -242,7 +242,11 @@ class Transformer(nn.Module):
     B, T = inputs.shape
     # inputs: (B, T)
     tok_emb = self.token_embeddings(inputs)  # (B, T, C)
-    pos_emb = self.pos_embeddings(torch.arange(T))  # (B, T, C)
+
+    # this is where we may have some problems
+    device = torch.cuda.current_device()
+    pos_emb = self.pos_embeddings(torch.arange(T, device=device))  # (B, T, C)
+
     x = tok_emb + pos_emb
     x = self.layers(x)
     x = self.ln_f(x)
@@ -262,6 +266,7 @@ class Transformer(nn.Module):
 
 def train(model: Transformer, optimizer: AdamWOptimizer, train_data: Dataset):
   train_loader = DataLoader(train_data, batch_size=32, shuffle=True, num_workers=4)
+  device = torch.cuda.current_device()
   # test_loader = DataLoader(
   #   test_ds, batch_size=script_args.batch_size, shuffle=True, num_workers=4
   # )
@@ -279,6 +284,7 @@ def train(model: Transformer, optimizer: AdamWOptimizer, train_data: Dataset):
   while epoch < max_epochs:
     for batch in train_loader:
       inputs, targets = batch
+      inputs, targets = inputs.to(device), targets.to(device)
       # inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
       t1 = time.time()
 
@@ -319,7 +325,7 @@ def train(model: Transformer, optimizer: AdamWOptimizer, train_data: Dataset):
         # save_checkpoint(model, script_args.model_dir)
         print("should save")
 
-      # torch.cuda.empty_cache()
+      torch.cuda.empty_cache()
     epoch += 1
   return model
 
@@ -341,12 +347,20 @@ def main():
     vocab_size=tokenizer.vocab_size,
     dropout=0.1,
   )
+
+  torch.cuda.set_device(local_rank)
+  device = torch.cuda.current_device()
+  print(f"current device is: {device=}")
+
   train_data, test_data = create_dataset(contents, tokenizer, model_config.context_size)
   tformer = Transformer(model_config)
+  tformer.to(device)
 
   total_params = sum(p.numel() for p in tformer.parameters())
+
   print("\033[92mInitialized transformer model\033[0m")
   print(f"\033[92mTotal params: {total_params:,}\033[0m")
+
   optimizer = AdamWOptimizer(tformer.parameters())
   tformer.train()
   train(tformer, optimizer, train_data)
