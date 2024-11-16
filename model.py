@@ -251,9 +251,7 @@ class Transformer(nn.Module):
     x = tok_emb + pos_emb
     x = self.layers(x)
     x = self.ln_f(x)
-    x = self.lm_head(x)  # (B, T, V)
-
-    logits = F.softmax(x, dim=-1)
+    logits = self.lm_head(x)  # (B, T, V)
 
     if targets is None:
       return logits, None
